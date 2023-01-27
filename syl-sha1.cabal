@@ -1,0 +1,31 @@
+cabal-version:      3.4
+name:               syl-sha1
+version:            0.0.0
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Seth Livy
+maintainer:         no-reply@goarmy.com
+category:           Cryptography
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+common warnings
+    ghc-options: -Wall
+library
+    import:           warnings
+    exposed-modules:  SHA1
+    build-depends: 
+      base >=4.2 && <=5,
+      bv,
+      bytestring
+    hs-source-dirs:   src
+    default-language: Haskell2010
+
+test-suite syl-sha1-test
+    import:           warnings
+    default-language: Haskell2010
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.16.4.0,
+        syl-sha1
