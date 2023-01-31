@@ -10,3 +10,5 @@
 * Fixed typo in "makeNice". 
 * Added internal function "scanWithHistory".
 * Refined message schedule algorithm. `main` now takes 2 seconds instead of 80.
+* Cleaned up type defaults.
+* Removed unnecessary "criterion" library.
