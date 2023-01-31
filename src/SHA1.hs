@@ -4,6 +4,7 @@
 module SHA1 where
 
 import Control.Applicative (liftA2)
+import Criterion.Main
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Bits
@@ -11,10 +12,14 @@ import Data.BitVector as BV
 import Data.List (unfoldr)
 import Data.Word
 
+-- 0.0.0 : 80 seconds, 99% work
+-- 0.0.1 : 2 seconds, 95% work
+main = hashString $ Prelude.replicate (2^16) 'a'
+
 -- User-facing functions.
 
 hashString :: String -> String
-hashString xs = nice (hash . parse . pad . fromString $ xs)
+hashString xs = makeNice (hash . parse . pad . fromString $ xs)
 
 -- Implementation.
 
@@ -93,7 +98,7 @@ fullRound :: HashValue -> [BV] -> HashValue
 fullRound hashval block = add5tuple hashval $ (fst . last) $ flip unfoldr (hashval,0) 
   (\hvt@(hv,t) -> 
     let next (val,index) = (SHA1.round hv block index, index + 1) 
-        offset = 2
+        offset = 2 -- God himself told me to do this, I think.
     in if t == (79 + offset) -- How did I mess this up?
        then Nothing 
        else Just (hvt,next hvt)
@@ -105,12 +110,34 @@ fullRound hashval block = add5tuple hashval $ (fst . last) $ flip unfoldr (hashv
 -- 0x116fc33, 0x67452301, 0x7bf36ae2, 0x
 round :: HashValue -> [BV] -> Integer -> HashValue
 round hashval@(a,b,c,d,e) block t =
-  let schedule = messageSchedule block
+  let schedule = messageSchedule' block
       bigT = (rotate a 5) + (sha1Function t b c d) + e + sha1Constants t + fromIntegral (schedule !! (fromIntegral t))
    in (bigT,a,rotate b 30,c,d)
   
 makeNice :: HashValue -> String
 makeNice hv@(a,b,c,d,e) = showHex . join $ fmap (bitVec 32) [a,b,c,d,e]
+
+-- YOU.
+
+messageSchedule' :: [BV] -> [BV]
+messageSchedule' block = (++) block $ tail $
+  scanWithHistory func nil [16..79] block where
+    func _ index blockHist = let b = blockHist in
+      flip rotate 1 $ foldl1 xor
+        [ b !! (index - 3)
+        , b !! (index - 8)
+        , b !! (index - 14)
+        , b !! (index - 16)
+        ]
+
+-- This is a uh. A poor man's histomorphism.
+scanWithHistory :: (a -> t -> [a] -> a) -> a -> [t] -> [a] -> [a]
+scanWithHistory func start list hist =
+  start : (case list of 
+    [] -> []
+    x:xs -> let next = func start x hist 
+             in scanWithHistory func next xs (hist ++ pure next)
+    )
 
 messageSchedule :: [BV] -> [BV]
 messageSchedule block = fmap (wt block) [0..79] where
@@ -121,3 +148,5 @@ messageSchedule block = fmap (wt block) [0..79] where
       (fmap (wt block) [(t-3),(t-8),(t-14),(t-16)])
 
 add5tuple (a,b,c,d,e) (f,g,h,i,j) = (a+f,b+g,c+h,d+i,e+j)
+
+-- Benchmarking.
