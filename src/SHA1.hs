@@ -63,7 +63,7 @@ fromByteString bs =
 
 pad :: BV -> BV
 pad bv = 
-  let bvAppend1 = bv # (bitVec 1 (1 :: Int))
+  let bvAppend1 = bv # bitVec 1 (1 :: Int)
    in bvAppend1 # 
       zeros ((448 - size bvAppend1) `mod` 512) #
       -- l + 1 + k = 448 mod 512
@@ -71,7 +71,7 @@ pad bv =
       bitVec 64 (size bv)
 
 parse :: BV -> [[BV]]
-parse bv = group (32 :: Int) <$> (group (512 :: Int) bv)
+parse bv = group (32 :: Int) <$> group (512 :: Int) bv
 
 type HashValue = (Word32,Word32,Word32,Word32,Word32)
 
@@ -87,25 +87,25 @@ h0 =
 -- Hashing.
 
 hash :: [[BV]] -> HashValue
-hash parsed = Prelude.foldl fullRound h0 parsed
+hash = Prelude.foldl fullRound h0
 
 -- `fullRound h0 (group 32 $ pad (fromString "abc"))` should
 -- spit out:
 -- ["0x42541b35","0x5738d5e1","0x21834873","0x681e6df6","0x0d8fdf6ad"]
 fullRound :: HashValue -> [BV] -> HashValue
-fullRound hashval block = add5tuple hashval $ (fst . last) $ flip unfoldr (hashval,0) 
+fullRound hashval block = add5tuple hashval $ (fst . last) $ unfoldr
   (\hvt@(hv,t) -> 
     let next (_,index) = (SHA1.round hv block index, index + 1) 
         offset = 2 -- God himself told me to do this, I think.
     in if t == (79 + offset) -- How did I mess this up?
        then Nothing 
        else Just (hvt,next hvt)
-  )
+  ) (hashval,0)
 
 round :: HashValue -> [BV] -> Integer -> HashValue
 round (a,b,c,d,e) block t =
   let schedule = messageSchedule' block
-      bigT = (rotate a 5) + (sha1Function t b c d) + e + sha1Constants t + fromIntegral (schedule !! (fromIntegral t))
+      bigT = rotate a 5 + sha1Function t b c d + e + sha1Constants t + fromIntegral (schedule !! fromIntegral t)
    in (bigT,a,rotate b 30,c,d)
   
 makeNice :: HashValue -> String
