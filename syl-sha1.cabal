@@ -12,7 +12,7 @@ common warnings
     ghc-options: -funfolding-use-threshold=16 -O2 -optc-O3 -Wall
 library
     import:           warnings
-    exposed-modules:  SHA1
+    exposed-modules:  SHA1, SHA3
     build-depends: 
       base >=4.2 && <=5,
       bv,
