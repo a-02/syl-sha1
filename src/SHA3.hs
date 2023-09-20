@@ -4,11 +4,15 @@
 module SHA3 where
 
 import Control.Applicative (liftA2)
+import Control.Monad
+import Control.Monad.ST
+import Data.Bit
+import Data.Bits (xor)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC8
-import Data.Bits
-import Data.BitVector as BV hiding (index)
-import Data.List (unfoldr)
+import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Unboxed.Mutable as MU
 import Data.Word
 
 -- 2.2 Algorithm Parameters & Other Variables
@@ -87,6 +91,132 @@ import Data.Word
 -- Plane(j) = Lane(0,j) .. Lane(4,j)
 --
 -- S = Plane(0) .. Plane(4)
+--
+-- oh btw btw
+--
+-- xor on lists ziplists em
+-- jsyk
+
+data ArraySlice
+  = Plane Int
+  | Slice Int
+  | Sheet Int
+  | Row Int Int
+  | Column Int Int
+  | Lane Int Int
+  | Point Int Int Int
+
+arrayToString :: Int -> Int -> Int -> Int -> Int
+arrayToString w x y z = w * (5 * y + x) + z
+
+stringToArray :: Int -> Int -> (Int, Int, Int)
+stringToArray w i =
+  (,,)
+    (((i - z) `div` w) `rem` 5)
+    (((i - z) `div` w) `div` 5)
+    z
+ where
+  z = i `mod` w
+
+bySlice :: Int -> ArraySlice -> Vector Int
+bySlice w as =
+  U.fromList $
+    let str x1 y1 z1 = (w * (5 * y1 + x1)) + z1
+        xs = [0 .. 4]
+        ys = [0 .. 4]
+        zs = [0 .. (w - 1)]
+     in case as of
+          (Plane y) -> (\(x, z) -> str x y z) <$> liftA2 (,) xs zs
+          (Slice z) -> (\(x, y) -> str x y z) <$> liftA2 (,) xs ys
+          (Sheet x) -> uncurry (str x) <$> liftA2 (,) ys zs
+          (Row y z) -> (\x -> str x y z) <$> xs
+          (Column x z) -> (\y -> str x y z) <$> ys
+          (Lane x y) -> str x y <$> zs
+          (Point x y z) -> [str x y z]
+
+-- step mapping 1: theta
+--
+-- step 1: generating C[x,z]
+-- for all pairs (x,z)
+-- C[x,z] = foldl1 xor $ A[x,0,z] .. A[x,4,z]
+theta :: U.Vector Bit -> U.Vector Bit
+theta array = runST $ do
+  let w = U.length array `div` 25
+      b = U.length array
+      bigC x1 z1 = U.foldl1 xor ((array U.!) `U.map` bySlice w (Column x1 z1))
+      bigD x2 z2 =
+        xor
+          (bigC (x2 - 1 `mod` 5) z2)
+          (bigC (x2 + 1 `mod` 5) (z2 - 1 `mod` 5))
+  newArray <- MU.generate b ((\(x, _, z) -> bigD x z) . stringToArray w)
+  zipInPlace xor array newArray
+  U.freeze newArray
+
+rhoOffsets :: [Int]
+rhoOffsets =
+  [ 0
+  , 1
+  , 190
+  , 28
+  , 91
+  , 36
+  , 300
+  , 6
+  , 55
+  , 276
+  , 3
+  , 10
+  , 171
+  , 153
+  , 231
+  , 105
+  , 45
+  , 15
+  , 21
+  , 136
+  , 210
+  , 66
+  , 253
+  , 120
+  , 71
+  ]
+
+-- generates indexes for where the bits should be moved to
+rhoBack :: Int -> U.Vector Int
+rhoBack w =
+  -- w copies of [0..24], each times w.
+  -- [0,0,0...64,64,64...128,128,128... if w=64
+  -- a & b are the same length; 25 * w = w * 25.
+  let a = concatMap (fmap (* w) . replicate w) [0 .. 24]
+      b =
+        concat $
+          zipWith
+            -- add the offset to each number, then mod by w
+            -- [0,1,2,3...1,2,3,4...190,191,192...
+            (\x y -> fmap ((`mod` w) . (+ x)) y)
+            -- how much are we offsetting each lane by, in order
+            -- goes from (0,0) to (4,4)
+            rhoOffsets
+            -- 25 lists from 0 to w-1. think of these as blank lanes
+            (replicate 25 [0 .. (w - 1)])
+   in U.fromList $ zipWith (+) a b
+
+rho :: U.Vector Bit -> U.Vector Bit
+-- if i used a ring buffer, this would be O(1)!
+rho array = let w = U.length array `div` 25 in U.backpermute array (rhoBack w)
+
+{-
+
+this was a lesson in hubris.
+
+  cIndices <- U.thaw $ U.concat $ bySlice w . Plane <$> [0..4]
+  -- C is ... ok. i got C wrong. but this is still a neat solution.
+  c <- MU.replicate w (Bit False)
+  MU.iforM_ cIndices $ \index bit -> do
+    currentBit <- MU.read c (index `rem` w)
+    MU.write c (index `rem` w) (currentBit `xor` array U.! bit)
+
+-}
 
 x :: a
 x = x
